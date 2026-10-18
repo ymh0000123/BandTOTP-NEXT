@@ -12,6 +12,10 @@ val keystoreProperties = Properties().apply {
     }
 }
 
+// CI 通过 -PappVersionName/-PappVersionCode 注入 Release 版本，本地构建使用默认值
+val appVersionName = (project.findProperty("appVersionName") as String?)?.takeIf { it.isNotBlank() } ?: "1.0.0"
+val appVersionCode = (project.findProperty("appVersionCode") as String?)?.toIntOrNull() ?: 1
+
 android {
     namespace = "com.ymh0000123.bandtotp.next"
     compileSdk = 37
@@ -21,8 +25,8 @@ android {
         applicationId = "com.ymh0000123.bandtotp.next"
         minSdk = 27
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
     }
 
     signingConfigs {

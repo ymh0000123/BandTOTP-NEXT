@@ -55,6 +55,8 @@ BandTOTP-NEXT/
 ├── sign/                      # 本地签名材料目录（certificate.pem / private.pem，不入库）
 ├── dist/                      # 构建生成的签名 RPK（不入库）
 ├── package.json               # crypto-js 依赖
+├── .github/workflows/
+│   └── release.yml            # 发布 Release 时自动构建 RPK 与 APK
 ├── tools/
 │   ├── aegis-core.cjs         # Aegis 解密核心（Node）
 │   ├── aegis2band.js          # 命令行转换工具
@@ -106,6 +108,49 @@ BandTOTP-NEXT/
 
 同步 App 发送消息到快应用 `com.ymh0000123.bandtotp.next` 的 `pages/index`。
 首次使用请允许蓝牙权限，并在小米运动健康中保持手环连接。
+
+### GitHub Actions 自动构建
+
+`.github/workflows/release.yml` 会在**发布 Release**时自动构建两个产物并附加到该 Release：
+
+- `BandTOTP-NEXT-<版本>.rpk`：手环快应用
+- `BandTOTP-NEXT-Android-<版本>.apk`：同步 App
+
+也可以在 Actions 页面手动运行 `Release Build` 并填写版本号；手动运行只把产物
+保存为 workflow artifact，不会创建或修改 Release。
+
+首次使用前，在仓库 **Settings → Secrets and variables → Actions** 添加以下
+repository secrets：
+
+| Secret | 内容 |
+| --- | --- |
+| `VELA_CERT_PEM` | 手环签名证书 `certificate.pem` 全文 |
+| `VELA_PRIVATE_PEM` | 手环签名私钥 `private.pem` 全文 |
+| `ANDROID_KEYSTORE_BASE64` | Android 密钥库文件的 Base64（单行，无换行） |
+| `ANDROID_KEYSTORE_PASSWORD` | 密钥库密码 |
+| `ANDROID_KEY_ALIAS` | 密钥别名 |
+| `ANDROID_KEY_PASSWORD` | 密钥密码 |
+
+生成密钥库 Base64：
+
+```bash
+# Git Bash / Linux / macOS
+base64 -w0 sync-app/keystore/your-keystore.p12
+```
+
+```powershell
+# PowerShell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("sync-app\keystore\your-keystore.p12"))
+```
+
+版本号取自 Release tag（去掉开头的 `v`）；Android `versionCode` 按
+`major * 10000 + minor * 100 + patch` 计算，手环端同步写入 `src/manifest.json`，
+Android 端通过 `-PappVersionName` / `-PappVersionCode` 传入。tag 不是
+`x.y.z` 时回退到 `package.json` 的版本。
+
+> 签名材料仅在 workflow 运行时从 secrets 写入临时文件，构建后立即删除，不会
+> 进入仓库或构建产物。本 workflow 不在 Pull Request 上触发，fork 的 PR 无法
+> 读取这些 secrets。
 
 ## 使用方式
 
