@@ -1,0 +1,28 @@
+{
+  "item": {
+    "id": "com.ymh0000123.bandtotp.next",
+    "restype": "quick_app",
+    "name": "BandTOTP-NEXT",
+    "description": "leset0ng/BandTOTP-Band 的 TOTP 验证器改进版，支持 Aegis 备份导入、多算法、多位验证码 与 自定义周期\nGitHub仓库：ymh0000123/BandTOTP-NEXT",
+    "preview": [
+      "media/cover.png"
+    ],
+    "icon": "media/logo.png",
+    "cover": "media/cover.png",
+    "author": [
+      {
+        "name": "bandbbs_2070739",
+        "bindABAccount": true
+      }
+    ]
+  },
+  "links": [],
+  "downloads": {
+    "xmb9": {
+      "version": "2.1.0",
+      "file_name": "downloads/com.ymh0000123.bandtotp.next.release.2.1.0.rpk",
+      "versionCode": 20100
+    }
+  },
+  "ext": {}
+}
