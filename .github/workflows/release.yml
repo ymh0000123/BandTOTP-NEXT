@@ -148,27 +148,21 @@ jobs:
             sdkmanager_path="$(find "$sdk_root/cmdline-tools" -maxdepth 3 -type f -name sdkmanager | sort | tail -n 1)"
           fi
           [ -n "$sdkmanager_path" ] || { echo "::error::未找到 sdkmanager"; exit 1; }
-          echo "sdkmanager: $sdkmanager_path"
-          "$sdkmanager_path" --version 2>&1 | tail -n 3 || true
-          ls -la "$sdk_root/cmdline-tools/" || true
-          cat "$sdk_root/cmdline-tools/latest/source.properties" 2>/dev/null || true
+          yes | "$sdkmanager_path" --licenses > /dev/null || true
 
-          yes | "$sdkmanager_path" --licenses > /dev/null || true
-          "$sdkmanager_path" --list > /tmp/sdkmanager-list.txt 2>&1 || true
-          echo "--- available platforms ---"
-          grep -E "platforms;android-3[0-9]" /tmp/sdkmanager-list.txt | head -n 15 || true
-          echo "--- available cmdline-tools ---"
-          grep -E "cmdline-tools" /tmp/sdkmanager-list.txt | head -n 10 || true
-          if ! grep -qE "platforms;android-37([[:space:]]|$)" /tmp/sdkmanager-list.txt; then
-            echo "当前 sdkmanager 未提供 android-37，安装 cmdline-tools;19.0"
-            "$sdkmanager_path" --install "cmdline-tools;19.0"
-            sdkmanager_path="$sdk_root/cmdline-tools/19.0/bin/sdkmanager"
-          fi
-          [ -x "$sdkmanager_path" ] || { echo "::error::未找到可用的 sdkmanager: $sdkmanager_path"; exit 1; }
+          # runner 预装的 sdkmanager 较旧，先安装 19.0
+          "$sdkmanager_path" --install "cmdline-tools;19.0"
+          sdkmanager_path="$sdk_root/cmdline-tools/19.0/bin/sdkmanager"
+          [ -x "$sdkmanager_path" ] || { echo "::error::未找到 sdkmanager: $sdkmanager_path"; exit 1; }
           echo "using: $sdkmanager_path"
-          "$sdkmanager_path" --version 2>&1 | tail -n 3 || true
           yes | "$sdkmanager_path" --licenses > /dev/null || true
-          "$sdkmanager_path" --install "platforms;android-37" "build-tools;37.0.0"
+          "$sdkmanager_path" --install "platforms;android-37.0" "build-tools;37.0.0"
+
+          # 远程仓库使用 android-37.0 命名，AGP 的 compileSdk = 37 查找 platforms/android-37
+          if [ -d "$sdk_root/platforms/android-37.0" ] && [ ! -e "$sdk_root/platforms/android-37" ]; then
+            ln -s android-37.0 "$sdk_root/platforms/android-37"
+          fi
+          ls -l "$sdk_root/platforms/" | grep "android-37" || true
 
       - name: Prepare signing config
         env:
