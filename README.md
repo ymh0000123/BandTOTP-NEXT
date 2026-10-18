@@ -1,5 +1,7 @@
 # BandTOTP-NEXT
 
+![BandTOTP-NEXT 封面](docs/cover.png)
+
 小米手环 9（Vela 快应用）的 TOTP 验证器改进版，支持 **Aegis 备份导入**、**多算法**、**多位验证码** 与 **自定义周期**。
 
 基于 [leset0ng/BandTOTP-Band](https://github.com/leset0ng/BandTOTP-Band)（MIT）重写增强，本版本由 ymh0000123 维护。手环快应用包名为 `com.ymh0000123.bandtotp.next`。
@@ -54,13 +56,16 @@ BandTOTP-NEXT/
 │       └── importers.js       # Aegis / otpauth / 迁移码解析
 ├── sign/                      # 本地签名材料目录（certificate.pem / private.pem，不入库）
 ├── dist/                      # 构建生成的签名 RPK（不入库）
+├── docs/
+│   └── cover.png              # README 介绍封面（3:2）
 ├── package.json               # crypto-js 依赖
 ├── .github/workflows/
 │   └── release.yml            # 发布 Release 时自动构建 RPK 与 APK
 ├── tools/
 │   ├── aegis-core.cjs         # Aegis 解密核心（Node）
 │   ├── aegis2band.js          # 命令行转换工具
-│   └── aegis-import.html      # 浏览器导入工具
+│   ├── aegis-import.html      # 浏览器导入工具
+│   └── generate-brand-assets.py  # 生成图标与封面
 ├── sync-app/                  # Android 同步 App（Miuix）
 │   ├── app/src/main/java/com/ymh0000123/bandtotp/next/
 │   │   ├── MainActivity.kt    # 分享 Intent 入口
