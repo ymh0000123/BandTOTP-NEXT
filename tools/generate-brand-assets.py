@@ -235,21 +235,27 @@ def render_cover(width: int = 1500, height: int = 1000) -> Image.Image:
     d.text((122, 790), "无需云端", font=f_quote, fill=(111, 216, 180))
     d.text((122, 830), "无需账号 · 数据只在你手里", font=f_note, fill=TEXT_DIM)
 
-    # 手环主视觉
-    cx, cy = 1150, 500
+    # 手环主视觉：屏幕按手环端真实列表页布局绘制
+    cx = 1150
+    sw, sh = 200, 510
+    s = sw / 192.0
+    screen_top = 195
+    screen_left = cx - sw / 2
+    screen_bottom = screen_top + sh
+
     shadow = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     sd = ImageDraw.Draw(shadow)
-    sd.ellipse([cx - 150, 820, cx + 150, 900], fill=(0, 0, 0, 110))
-    shadow = shadow.filter(ImageFilter.GaussianBlur(26))
+    sd.ellipse([cx - 150, 855, cx + 150, 902], fill=(0, 0, 0, 120))
+    shadow = shadow.filter(ImageFilter.GaussianBlur(24))
     cover = Image.alpha_composite(cover, shadow)
 
     d = ImageDraw.Draw(cover)
 
     # 表带
-    for top in (158, 608):
+    for top in (70, 725):
         d.rounded_rectangle(
-            [cx - 65, top, cx + 65, top + 232],
-            radius=55,
+            [cx - 65, top, cx + 65, top + 165],
+            radius=50,
             fill=(10, 42, 34, 255),
             outline=(30, 96, 78, 255),
             width=2,
@@ -257,38 +263,84 @@ def render_cover(width: int = 1500, height: int = 1000) -> Image.Image:
 
     # 表体
     d.rounded_rectangle(
-        [cx - 140, 285, cx + 140, 715],
-        radius=95,
+        [cx - 123, 170, cx + 123, 740],
+        radius=88,
         fill=(6, 17, 14, 255),
         outline=(36, 116, 94, 255),
         width=3,
     )
     d.rounded_rectangle(
-        [cx - 128, 297, cx + 128, 703],
-        radius=84,
+        [cx - 112, 182, cx + 112, 728],
+        radius=80,
         outline=(18, 62, 50, 255),
         width=2,
     )
 
-    # 屏幕
-    screen = [cx - 112, 342, cx + 112, 672]
-    d.rounded_rectangle(screen, radius=60, fill=(3, 8, 6, 255), outline=(16, 54, 44, 255), width=2)
+    # 屏幕内容：按 192x490 的设计稿 1:1 还原列表布局
+    scr = Image.new("RGBA", (sw, sh), (0, 0, 0, 255))
+    sd = ImageDraw.Draw(scr)
 
-    d.text((cx, 374), "Google", font=f_small, fill=(111, 216, 180), anchor="mt")
+    def X(v: float) -> float:
+        return (v - 96) * s + sw / 2
 
-    # 倒计时进度条
-    bar_x0, bar_x1 = cx - 86, cx + 86
-    d.rounded_rectangle([bar_x0, 408, bar_x1, 413], radius=3, fill=(18, 53, 43, 255))
-    d.rounded_rectangle([bar_x0, 408, bar_x0 + int((bar_x1 - bar_x0) * 0.72), 413], radius=3, fill=(*ACCENT, 255))
+    def Y(v: float) -> float:
+        return v * s
 
-    d.text((cx, 505), "483 921", font=f_mono, fill=TEXT_MAIN, anchor="mm")
-    d.text((cx, 560), "剩余 18 秒", font=f_small, fill=(*ACCENT, 255), anchor="mt")
+    f_card_name = font(FONT_BOLD, round(23 * s))
+    f_card_usr = font(FONT_REGULAR, round(16 * s))
+    f_card_remain = font(FONT_REGULAR, round(14 * s))
+    f_card_otp = font(FONT_MONO, round(31 * s))
 
-    # 底部三个状态点
-    for i in range(3):
-        px = cx - 18 + i * 18
-        color = (*ACCENT, 255) if i == 1 else (20, 60, 49, 255)
-        d.ellipse([px - 3, 618, px + 3, 624], fill=color)
+    cards = [
+        ("GitHub", "octocat", "483921", "18s"),
+        ("Google", "me@gmail.com", "704268", "24s"),
+        ("AWS", "root@prod", "915407", "9s"),
+        ("Steam", "player_one", "K7M2Q", "27s"),
+    ]
+    for i, (name, usr, otp, remain) in enumerate(cards):
+        top = Y(86 + i * 120)
+        sd.rounded_rectangle(
+            [X(3), top, X(189), top + Y(112)],
+            radius=Y(24),
+            fill=(28, 28, 30, 255),
+        )
+        sd.text((X(14), top + Y(8)), name, font=f_card_name, fill=(255, 255, 255, 255))
+        sd.text((X(14), top + Y(40)), usr, font=f_card_usr, fill=(142, 142, 147, 255))
+        sd.text(
+            (X(182), top + Y(44)),
+            remain,
+            font=f_card_remain,
+            fill=(142, 142, 147, 255),
+            anchor="ra",
+        )
+        sd.text((X(14), top + Y(71)), otp, font=f_card_otp, fill=(255, 255, 255, 255))
+
+    # 顶部信息按钮：白色椭圆 + 深色 i
+    info_box = [X(45), Y(6), X(147), Y(78)]
+    sd.ellipse(info_box, fill=(255, 255, 255, 255))
+    icx = (info_box[0] + info_box[2]) / 2
+    sd.ellipse([icx - 4 * s, Y(15), icx + 4 * s, Y(23)], fill=(32, 32, 32, 255))
+    sd.rounded_rectangle([icx - 3 * s, Y(28), icx + 3 * s, Y(62)], radius=3 * s, fill=(32, 32, 32, 255))
+
+    # 底部渐变遮罩
+    fade = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
+    fd = ImageDraw.Draw(fade)
+    fade_h = int(Y(86))
+    for i in range(fade_h):
+        alpha = int(255 * (i / max(1, fade_h - 1)))
+        fd.line([(0, sh - fade_h + i), (sw, sh - fade_h + i)], fill=(0, 0, 0, alpha))
+    scr = Image.alpha_composite(scr, fade)
+
+    mask = Image.new("L", (sw, sh), 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, sw - 1, sh - 1], radius=54, fill=255)
+    cover.paste(scr, (int(screen_left), screen_top), mask)
+    d = ImageDraw.Draw(cover)
+    d.rounded_rectangle(
+        [screen_left, screen_top, screen_left + sw, screen_bottom],
+        radius=54,
+        outline=(20, 64, 52, 255),
+        width=2,
+    )
 
     # 页脚
     d.line([96, 906, width - 96, 906], fill=(20, 60, 49, 255), width=2)
