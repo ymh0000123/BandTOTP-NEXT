@@ -139,13 +139,16 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           cache: gradle
 
-      - uses: android-actions/setup-android@v3
-
       - name: Install Android SDK packages
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager --install "platforms;android-37" "build-tools;37.0.0"
+          sdkmanager_path="$(command -v sdkmanager || true)"
+          if [ -z "$sdkmanager_path" ]; then
+            sdkmanager_path="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools" -maxdepth 3 -type f -name sdkmanager | sort | tail -n 1)"
+          fi
+          [ -n "$sdkmanager_path" ] || { echo "::error::未找到 sdkmanager"; exit 1; }
+          yes | "$sdkmanager_path" --licenses > /dev/null || true
+          "$sdkmanager_path" --install "platforms;android-37" "build-tools;37.0.0"
 
       - name: Prepare signing config
         env:
