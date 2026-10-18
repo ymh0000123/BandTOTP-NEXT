@@ -1,0 +1,873 @@
+<template>
+  <div class="bg" onswipe="exit">
+
+    <!-- ==================== 令牌列表 ==================== -->
+    <div class="bg" show="{{!more_show && !ab}}">
+      <list class="list" id="list">
+        <list-item
+          for="{{list}}"
+          tid="uid"
+          type="aa"
+          class="item"
+          onclick="info($idx)">
+          <text class="item-name">{{$item.name}}</text>
+          <text class="item-usr" if="{{$item.usr}}">{{$item.usr}}</text>
+          <text class="item-remain">{{$item.remainText}}</text>
+          <text class="{{$item.codeClass}}">{{$item.otp}}</text>
+        </list-item>
+      </list>
+
+      <!-- 空状态 -->
+      <div class="empty" if="{{list.length == 0}}">
+        <img src="/common/nokey.png" class="empty-img" />
+        <text class="empty-tip">用手机客户端发送 otpauth 或 Aegis 备份</text>
+      </div>
+
+      <!-- 顶部 / 底部渐变遮罩 -->
+      <img src="/common/tblack.png" class="top-mask" if="{{list.length != 0}}" />
+      <img src="/common/bblack.png" class="bottom-mask" if="{{list.length != 0}}" />
+
+      <img src="/common/info.png" class="info-btn" onclick="i()" />
+    </div>
+
+    <!-- ==================== 详情 ==================== -->
+    <div class="detail" show="{{more_show}}">
+      <img src="/common/back.png" class="corner-btn corner-left" onclick="exit('e')" />
+      <img src="/common/del.png" class="corner-btn corner-right" onclick="del()" />
+
+      <text class="detail-name">{{more.name}}</text>
+      <text class="detail-usr" if="{{more.usr}}">{{more.usr}}</text>
+      <text class="{{more.codeClass}}">{{more.otp}}</text>
+      <text class="detail-meta">{{moreMeta}}</text>
+      <text class="detail-timer" if="{{more.type != 'hotp'}}">剩余 {{timelast}} 秒</text>
+
+      <div class="hotp-next" if="{{more.type == 'hotp'}}" onclick="nextHotp()">
+        <text class="hotp-next-text">下一码</text>
+      </div>
+
+      <progress
+        class="detail-progress"
+        if="{{more.type != 'hotp'}}"
+        percent="{{timeProgress}}"
+        type="arc">
+      </progress>
+    </div>
+
+    <!-- ==================== 关于 ==================== -->
+    <scroll class="about-page" show="{{ab}}" scroll-y="true" bounces="true">
+      <div class="about-body">
+        <img src="/common/logo.png" class="about-logo" />
+        <text class="about-title">BandTOTP-NEXT</text>
+        <text class="about-version">版本 2.0.0</text>
+
+        <text class="about-credit">原作者：leset0ng</text>
+        <text class="about-credit">本版本作者：ymh0000123</text>
+      </div>
+    </scroll>
+    <img src="/common/back.png" class="about-back" show="{{ab}}" onclick="exit('e')" />
+
+  </div>
+</template>
+
+<script>
+import {
+  generateCode,
+  normalizeEntry,
+  entryFingerprint,
+  getMeta,
+  getDetailMeta,
+  getNextBoundary,
+  getRemaining
+} from './totp';
+import { parsePayload } from './importers';
+import prompt from '@system.prompt';
+import interconnect from '@system.interconnect';
+import storage from '@system.storage';
+
+const conn = interconnect.instance();
+const dataKey = 'keys';
+const STORAGE_VERSION = 2;
+
+let tickTimer = null;
+let progressTimer = null;
+let delTimer = null;
+let delArmed = false;
+let currentIndex = -1;
+let storageReady = false;
+let pendingMessages = [];
+let uidSeq = 0;
+
+/**
+ * 根据验证码位数选择字号，避免 8~10 位验证码溢出屏幕。
+ * prefix 为 item-otp 或 detail-otp。
+ */
+function getCodeClass(entry, prefix) {
+  if (entry.digits >= 9) return prefix + ' ' + prefix + '-xs';
+  if (entry.digits >= 7) return prefix + ' ' + prefix + '-sm';
+  return prefix;
+}
+
+/**
+ * 列表 / 详情使用的条目。
+ * 只把需要持久化的字段写进 storage，运行时字段单独维护。
+ */
+class OtpEntry {
+  constructor(raw) {
+    const e = normalizeEntry(raw);
+    this.uid = ++uidSeq;
+    this.name = e.name;
+    this.usr = e.usr;
+    this.key = e.key;
+    this.type = e.type;
+    this.algorithm = e.algorithm;
+    this.digits = e.digits;
+    this.period = e.period;
+    this.counter = e.counter;
+    this.pin = e.pin;
+    this.favorite = e.favorite;
+
+    this.otp = '';
+    this.codeClass = getCodeClass(this, 'item-otp');
+    this.meta = getMeta(this);
+    this.remainText = '';
+    this.nextAt = 0;
+    this.upd(true);
+  }
+
+  serialize() {
+    return {
+      name: this.name,
+      usr: this.usr,
+      key: this.key,
+      type: this.type,
+      algorithm: this.algorithm,
+      digits: this.digits,
+      period: this.period,
+      counter: this.counter,
+      pin: this.pin,
+      favorite: this.favorite
+    };
+  }
+
+  upd(force) {
+    const now = Date.now();
+
+    if (this.type === 'hotp') {
+      if (force || !this.otp) this.otp = generateCode(this);
+      this.remainText = '#' + this.counter;
+      this.nextAt = Infinity;
+      return;
+    }
+
+    if (force || !this.otp || now >= this.nextAt) {
+      this.otp = generateCode(this);
+      this.nextAt = getNextBoundary(this, now);
+    }
+    this.remainText = getRemaining(this, now) + 's';
+  }
+}
+
+export default {
+  private: {
+    ab: false,
+    list: [],
+    more_show: false,
+    more: { name: '', usr: '', otp: '', type: 'totp', counter: 0, codeClass: 'detail-otp' },
+    moreMeta: '',
+    timelast: 0,
+    timeProgress: 0
+  },
+
+  onInit() {
+    storageReady = false;
+    pendingMessages = [];
+    this.loadFromStorage();
+
+    conn.onmessage = (data) => {
+      this.onMessage(data);
+    };
+  },
+
+  onShow() {
+    this.refreshAll(true);
+    this.startTimers();
+  },
+
+  onHide() {
+    this.stopTimers();
+  },
+
+  onDestroy() {
+    this.stopTimers();
+    clearTimeout(delTimer);
+  },
+
+  /* ---------------- 存储 ---------------- */
+
+  loadFromStorage() {
+    storage.get({
+      key: dataKey,
+      success: (data) => {
+        if (!data) {
+          this.onStorageReady();
+          return;
+        }
+
+        let parsed = null;
+        try {
+          parsed = JSON.parse(data);
+        } catch (e) {
+          this.onStorageReady();
+          return;
+        }
+
+        let rawList = [];
+        if (Array.isArray(parsed)) rawList = parsed;
+        else if (parsed && Array.isArray(parsed.list)) rawList = parsed.list;
+
+        const loaded = [];
+        for (let i = 0; i < rawList.length; i++) {
+          try {
+            loaded.push(new OtpEntry(rawList[i]));
+          } catch (e) {
+            // 跳过损坏的条目，避免整个列表无法启动
+          }
+        }
+
+        this.list = loaded;
+        this.refreshAll(true);
+        this.onStorageReady();
+      },
+      fail: () => {
+        // 首次使用或读取失败时，仍然允许接收导入消息
+        this.onStorageReady();
+      }
+    });
+  },
+
+  onStorageReady() {
+    if (storageReady) return;
+    storageReady = true;
+
+    const queue = pendingMessages;
+    pendingMessages = [];
+    for (let i = 0; i < queue.length; i++) {
+      this.onMessage(queue[i]);
+    }
+  },
+
+  save() {
+    const data = {
+      version: STORAGE_VERSION,
+      list: this.list.map((e) => e.serialize())
+    };
+    storage.set({
+      key: dataKey,
+      value: JSON.stringify(data)
+    });
+  },
+
+  /* ---------------- 导入 ---------------- */
+
+  onMessage(message) {
+    if (!storageReady) {
+      pendingMessages.push(message);
+      return;
+    }
+
+    let text = message;
+    if (message && typeof message === 'object' && message.data !== undefined) {
+      text = message.data;
+    }
+
+    if (text === undefined || text === null || text === '') return;
+
+    let result;
+    try {
+      result = parsePayload(text);
+    } catch (e) {
+      prompt.showToast({ message: '解析失败：' + e.message, duration: 3000 });
+      return;
+    }
+
+    if (!result.ok) {
+      prompt.showToast({
+        message: result.error,
+        duration: result.code === 'ENCRYPTED' ? 5000 : 3000
+      });
+      return;
+    }
+
+    const stat = this.mergeEntries(result.entries);
+    this.save();
+    this.refreshAll(true);
+
+    let messageText = '已导入 ' + (stat.added + stat.updated) + ' 条';
+    if (stat.updated > 0) messageText += '（更新 ' + stat.updated + '）';
+    if (result.warnings && result.warnings.length) {
+      messageText += '，跳过 ' + result.warnings.length + ' 条';
+    }
+
+    prompt.showToast({ message: messageText, duration: 3000 });
+  },
+
+  mergeEntries(entries) {
+    let added = 0;
+    let updated = 0;
+
+    for (let i = 0; i < entries.length; i++) {
+      let entry;
+      try {
+        entry = new OtpEntry(entries[i]);
+      } catch (e) {
+        continue;
+      }
+
+      const fingerprint = entryFingerprint(entry);
+      const index = this.findEntry(fingerprint);
+
+      if (index >= 0) {
+        const old = this.list[index];
+        if (entry.name) old.name = entry.name;
+        if (entry.usr) old.usr = entry.usr;
+        if (entry.pin) old.pin = entry.pin;
+        if (entry.favorite) old.favorite = true;
+        if (entry.type === 'hotp') {
+          old.counter = Math.max(old.counter, entry.counter);
+        }
+        old.meta = getMeta(old);
+        old.upd(true);
+        updated++;
+      } else {
+        this.list.push(entry);
+        added++;
+      }
+    }
+
+    // list 原数组的 push / 属性修改会被框架观察到，
+    // 这里不做 slice 重建，避免列表滚动位置被重置。
+    return { added: added, updated: updated };
+  },
+
+  findEntry(fingerprint) {
+    for (let i = 0; i < this.list.length; i++) {
+      if (entryFingerprint(this.list[i]) === fingerprint) return i;
+    }
+    return -1;
+  },
+
+  /* ---------------- 定时刷新 ---------------- */
+
+  startTimers() {
+    this.stopTimers();
+    tickTimer = setInterval(() => this.tick(), 1000);
+    progressTimer = setInterval(() => this.updateProgress(), 200);
+  },
+
+  stopTimers() {
+    if (tickTimer) {
+      clearInterval(tickTimer);
+      tickTimer = null;
+    }
+    if (progressTimer) {
+      clearInterval(progressTimer);
+      progressTimer = null;
+    }
+  },
+
+  tick() {
+    const now = Date.now();
+
+    for (let i = 0; i < this.list.length; i++) {
+      const e = this.list[i];
+
+      if (e.type === 'hotp') continue;
+
+      if (now >= e.nextAt || !e.otp) {
+        e.otp = generateCode(e);
+        e.nextAt = getNextBoundary(e, now);
+      }
+
+      const remain = e.period - (Math.floor(now / 1000) % e.period);
+      const text = remain + 's';
+      if (e.remainText !== text) {
+        e.remainText = text;
+      }
+    }
+
+    if (this.more_show && this.more) {
+      this.refreshMore(now);
+    }
+  },
+
+  // 原地更新条目属性即可刷新对应的文字节点。
+  // 不要在这里重建 list 数组，否则列表会跳回顶部。
+  refreshAll(force) {
+    for (let i = 0; i < this.list.length; i++) {
+      this.list[i].upd(force === true);
+    }
+  },
+
+  refreshMore(now) {
+    const e = this.list[currentIndex];
+    if (!e) return;
+
+    if (e.type !== 'hotp' && (now >= e.nextAt || !e.otp)) {
+      e.otp = generateCode(e);
+      e.nextAt = getNextBoundary(e, now);
+    }
+
+    this.more = this.copyView(e);
+    this.moreMeta = getDetailMeta(e);
+  },
+
+  updateProgress() {
+    if (!this.more_show || !this.more) return;
+
+    const e = this.list[currentIndex];
+    if (!e || e.type === 'hotp') {
+      this.timeProgress = 0;
+      this.timelast = 0;
+      return;
+    }
+
+    const now = Date.now();
+    const remainMs = getNextBoundary(e, now) - now;
+    const periodMs = e.period * 1000;
+
+    this.timeProgress = Math.max(0, Math.min(100, remainMs / periodMs * 100));
+    this.timelast = Math.ceil(remainMs / 1000);
+  },
+
+  copyView(e) {
+    return {
+      name: e.name,
+      usr: e.usr,
+      otp: e.otp,
+      type: e.type,
+      counter: e.counter,
+      codeClass: getCodeClass(e, 'detail-otp')
+    };
+  },
+
+  /* ---------------- 交互 ---------------- */
+
+  i() {
+    this.ab = true;
+  },
+
+  info(index) {
+    const e = this.list[index];
+    if (!e) return;
+
+    currentIndex = index;
+    this.more = this.copyView(e);
+    this.moreMeta = getDetailMeta(e);
+    this.more_show = true;
+    this.updateProgress();
+  },
+
+  exit(event) {
+    if ((event && event.direction === 'right') || event === 'e') {
+      if (this.ab || this.more_show) {
+        this.more_show = false;
+        this.ab = false;
+        this.more = { name: '', usr: '', otp: '', type: 'totp', counter: 0, codeClass: 'detail-otp' };
+        this.moreMeta = '';
+        currentIndex = -1;
+        this.resetDelete();
+      } else {
+        this.$app.exit();
+      }
+    }
+  },
+
+  onBackPress() {
+    this.exit('e');
+    return true;
+  },
+
+  resetDelete() {
+    clearTimeout(delTimer);
+    delArmed = false;
+  },
+
+  del() {
+    if (!this.more_show) return;
+
+    // 手环上误触概率高，双击（2 秒内）才真正删除
+    if (!delArmed) {
+      delArmed = true;
+      clearTimeout(delTimer);
+      delTimer = setTimeout(() => {
+        delArmed = false;
+      }, 2000);
+      prompt.showToast({ message: '再次点击确认删除' });
+      return;
+    }
+
+    this.resetDelete();
+
+    if (currentIndex < 0 || currentIndex >= this.list.length) return;
+
+    this.list.splice(currentIndex, 1);
+    this.more_show = false;
+    this.more = { name: '', usr: '', otp: '', type: 'totp', counter: 0, codeClass: 'detail-otp' };
+    this.moreMeta = '';
+    currentIndex = -1;
+    this.save();
+
+    prompt.showToast({ message: '已删除' });
+  },
+
+  nextHotp() {
+    if (!this.more_show) return;
+
+    const e = this.list[currentIndex];
+    if (!e || e.type !== 'hotp') return;
+
+    e.counter = e.counter + 1;
+    e.otp = generateCode(e);
+    e.remainText = '#' + e.counter;
+    e.meta = getMeta(e);
+
+    this.more = this.copyView(e);
+    this.moreMeta = getDetailMeta(e);
+    this.save();
+
+    prompt.showToast({ message: '计数器 ' + e.counter });
+  }
+}
+</script>
+
+<style>
+.bg {
+  position: absolute;
+  width: 192px;
+  height: 490px;
+  background-color: #000000;
+}
+
+/* ---------------- 列表 ---------------- */
+
+.list {
+  left: 3px;
+  width: 186px;
+  height: 490px;
+  padding-top: 86px;
+  padding-bottom: 86px;
+}
+
+.item {
+  height: 112px;
+  background-color: #1C1C1E;
+  margin-bottom: 8px;
+  border-radius: 24px;
+}
+
+.item-name {
+  position: absolute;
+  left: 14px;
+  top: 8px;
+  width: 158px;
+  height: 32px;
+  font-size: 23px;
+  font-weight: bold;
+  color: #FFFFFF;
+  text-align: left;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+.item-usr {
+  position: absolute;
+  left: 14px;
+  top: 40px;
+  width: 100px;
+  height: 22px;
+  font-size: 16px;
+  color: #8E8E93;
+  text-align: left;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+.item-remain {
+  position: absolute;
+  right: 14px;
+  top: 44px;
+  font-size: 14px;
+  color: #8E8E93;
+  text-align: right;
+}
+
+.item-otp {
+  position: absolute;
+  left: 14px;
+  bottom: 10px;
+  font-size: 31px;
+  font-weight: bold;
+  color: #FFFFFF;
+  text-align: left;
+}
+
+.item-otp-sm {
+  position: absolute;
+  left: 14px;
+  bottom: 13px;
+  font-size: 26px;
+  font-weight: bold;
+  color: #FFFFFF;
+  text-align: left;
+}
+
+.item-otp-xs {
+  position: absolute;
+  left: 14px;
+  bottom: 16px;
+  font-size: 21px;
+  font-weight: bold;
+  color: #FFFFFF;
+  text-align: left;
+}
+
+.info-btn {
+  position: absolute;
+  left: 45px;
+  top: 6px;
+}
+
+.top-mask {
+  position: absolute;
+  top: 0;
+  width: 192px;
+  height: 86px;
+}
+
+.bottom-mask {
+  position: absolute;
+  bottom: 0;
+  width: 192px;
+  height: 86px;
+}
+
+/* ---------------- 空状态 ---------------- */
+
+.empty {
+  position: absolute;
+  width: 192px;
+  height: 490px;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.empty-img {
+  width: 192px;
+  height: 490px;
+}
+
+.empty-tip {
+  position: absolute;
+  bottom: 16px;
+  width: 176px;
+  font-size: 14px;
+  color: #8E8E93;
+  text-align: center;
+}
+
+/* ---------------- 详情 ---------------- */
+
+.detail {
+  position: absolute;
+  width: 192px;
+  height: 490px;
+  background-color: #000000;
+}
+
+.corner-btn {
+  position: absolute;
+  top: 6px;
+  width: 76px;
+  height: 54px;
+}
+
+.corner-left {
+  left: 10px;
+}
+
+.corner-right {
+  right: 10px;
+}
+
+.detail-name {
+  position: absolute;
+  left: 8px;
+  top: 104px;
+  width: 176px;
+  height: 34px;
+  font-size: 26px;
+  font-weight: bold;
+  color: #FFFFFF;
+  text-align: center;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+.detail-usr {
+  position: absolute;
+  left: 8px;
+  top: 138px;
+  width: 176px;
+  height: 24px;
+  font-size: 17px;
+  color: #8E8E93;
+  text-align: center;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+
+.detail-otp {
+  position: absolute;
+  left: 4px;
+  top: 168px;
+  width: 184px;
+  font-size: 42px;
+  font-weight: bold;
+  color: #FFFFFF;
+  text-align: center;
+}
+
+.detail-otp-sm {
+  position: absolute;
+  left: 4px;
+  top: 176px;
+  width: 184px;
+  font-size: 33px;
+  font-weight: bold;
+  color: #FFFFFF;
+  text-align: center;
+}
+
+.detail-otp-xs {
+  position: absolute;
+  left: 4px;
+  top: 182px;
+  width: 184px;
+  font-size: 27px;
+  font-weight: bold;
+  color: #FFFFFF;
+  text-align: center;
+}
+
+.detail-meta {
+  position: absolute;
+  left: 6px;
+  top: 232px;
+  width: 180px;
+  height: 34px;
+  font-size: 14px;
+  color: #8E8E93;
+  text-align: center;
+  lines: 2;
+  text-overflow: ellipsis;
+}
+
+.detail-timer {
+  position: absolute;
+  left: 6px;
+  top: 270px;
+  width: 180px;
+  height: 26px;
+  font-size: 16px;
+  color: #8E8E93;
+  text-align: center;
+}
+
+.detail-progress {
+  position: absolute;
+  left: 2px;
+  bottom: 6px;
+  width: 188px;
+  height: 94px;
+  radius: 94px;
+  center-x: 94px;
+  center-y: 0px;
+  stroke-width: 10px;
+  start-angle: 240deg;
+  total-angle: -120deg;
+  layer-color: rgba(255, 255, 255, 0.18);
+  color: #FFFFFF;
+}
+
+.hotp-next {
+  position: absolute;
+  left: 46px;
+  top: 262px;
+  width: 100px;
+  height: 42px;
+  border-radius: 21px;
+  background-color: #2C2C2E;
+  justify-content: center;
+  align-items: center;
+}
+
+.hotp-next-text {
+  font-size: 18px;
+  color: #FFFFFF;
+  text-align: center;
+}
+
+/* ---------------- 关于 ---------------- */
+
+.about-page {
+  position: absolute;
+  width: 192px;
+  height: 490px;
+  background-color: #000000;
+}
+
+.about-body {
+  width: 192px;
+  height: 490px;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.about-logo {
+  width: 64px;
+  height: 64px;
+}
+
+.about-title {
+  margin-top: 10px;
+  width: 180px;
+  font-size: 24px;
+  font-weight: bold;
+  color: #FFFFFF;
+  text-align: center;
+}
+
+.about-version {
+  margin-top: 4px;
+  width: 180px;
+  font-size: 13px;
+  color: #8E8E93;
+  text-align: center;
+}
+
+.about-credit {
+  margin-top: 8px;
+  width: 172px;
+  font-size: 12px;
+  color: #636366;
+  text-align: center;
+}
+
+.about-back {
+  position: absolute;
+  left: 45px;
+  top: 6px;
+}
+</style>

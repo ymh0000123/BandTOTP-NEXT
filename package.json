@@ -1,0 +1,12 @@
+{
+  "name": "bandtotp-next",
+  "version": "2.0.0",
+  "private": true,
+  "description": "BandTOTP-NEXT: 为小米手环打造的 TOTP 客户端，支持 Aegis 备份导入与多算法令牌",
+  "scripts": {
+    "test": "node tests/run-tests.cjs"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0"
+  }
+}

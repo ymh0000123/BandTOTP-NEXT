@@ -1,0 +1,37 @@
+# 依赖
+node_modules/
+
+# 构建产物
+build/
+dist/
+*.apk
+*.rpk
+.temp_*/
+
+# 测试产物
+tests/.build/
+
+# 签名私钥与本地凭据，禁止入库
+sign/
+*.p12
+*.jks
+*.keystore
+keystore.properties
+local.properties
+
+# Android / Gradle
+sync-app/.gradle/
+sync-app/.kotlin/
+sync-app/build/
+sync-app/app/build/
+sync-app/local.properties
+
+# 编辑器与系统文件
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# 扫描与工具缓存
+.mimosa/
