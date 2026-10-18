@@ -89,7 +89,7 @@ BandTOTP-NEXT/
 4. 点击“调试”在模拟器验证。
 5. 将你自己的 `certificate.pem` 与 `private.pem` 放入 `sign/`，然后执行
    `aiot release`，生成
-   `dist/com.ymh0000123.bandtotp.next.release.2.0.0.rpk`。
+   `dist/com.ymh0000123.bandtotp.next.release.2.1.0.rpk`。
    签名材料不会随仓库提供，也不会入库。
 6. 用 AstroBox 或表盘自定义工具安装到手环。
 
