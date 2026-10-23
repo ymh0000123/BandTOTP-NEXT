@@ -3,7 +3,7 @@
 
 输出:
   src/common/logo.png   96x96 快应用图标（同时用于关于页）
-  docs/cover.png        1500x1000（3:2）README 封面
+  docs/cover.webp       2400x1600（3:2）README / 资源页头图
 
 用法: python tools/generate-brand-assets.py
 """
@@ -168,190 +168,152 @@ def render_icon(px: int = 96, supersample: int = 8) -> Image.Image:
     return base.resize((px, px), Image.LANCZOS)
 
 
-def render_cover(width: int = 1500, height: int = 1000) -> Image.Image:
+def render_cover(width: int = 2400, height: int = 1600, ss: int = 2) -> Image.Image:
+    """3:2 资源页头图。
+
+    以「大字号品牌名 + 两行标语」为主体，标签与页脚信息压缩为单行，
+    保证在资源页缩小展示时仍能一眼读出名称与核心能力。
+    绘制走 2x 超采样细节层，缩放后边缘与文字更锐利。
+    """
     yy, xx = np.mgrid[0:height, 0:width].astype(np.float32)
     t = (yy / height)[..., None]
     top = np.array([6, 13, 11], dtype=np.float32)
     bottom = np.array([9, 27, 22], dtype=np.float32)
     color = top * (1 - t) + bottom * t
 
-    glow_a = _radial_glow(width, height, width * 0.12, -height * 0.05, width * 0.62, 0.30)
-    color += glow_a[..., None] * np.array([0, 190, 130], dtype=np.float32)
-    glow_b = _radial_glow(width, height, width * 0.94, height * 1.02, width * 0.55, 0.22)
-    color += glow_b[..., None] * np.array([0, 160, 100], dtype=np.float32)
+    color += _radial_glow(width, height, width * 0.08, -height * 0.05, width * 0.60, 0.26)[..., None] * np.array(
+        [0, 190, 130], dtype=np.float32
+    )
+    color += _radial_glow(width, height, width * 0.78, height * 0.50, width * 0.46, 0.30)[..., None] * np.array(
+        [0, 165, 112], dtype=np.float32
+    )
 
-    dots = ((xx % 48) < 1.4) & ((yy % 48) < 1.4)
-    color[dots] += 12
+    grid = 52
+    dots = ((xx % grid) < 1.5) & ((yy % grid) < 1.5)
+    color[dots] += 14
     color = np.clip(color, 0, 255)
 
-    cover = Image.fromarray(np.dstack([color, np.full((height, width), 255)]).astype(np.uint8), "RGBA")
+    cover = Image.fromarray(
+        np.dstack([color, np.full((height, width), 255, dtype=np.float32)]).astype(np.uint8), "RGBA"
+    )
 
-    # 背景光斑
+    # 手环背后的柔光，把视线压到主体上
     halo = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    hd = ImageDraw.Draw(halo)
-    hd.ellipse([width * 0.60, height * 0.10, width * 0.98, height * 0.82], fill=(0, 210, 140, 26))
-    halo = halo.filter(ImageFilter.GaussianBlur(90))
-    cover = Image.alpha_composite(cover, halo)
+    ImageDraw.Draw(halo).ellipse([1830 - 360, 800 - 500, 1830 + 360, 800 + 500], fill=(0, 214, 148, 30))
+    cover = Image.alpha_composite(cover, halo.filter(ImageFilter.GaussianBlur(120)))
 
-    icon = render_icon(132, supersample=6)
-    cover.alpha_composite(icon, (96, 74))
+    # ---- 细节层 ----
+    layer = Image.new("RGBA", (width * ss, height * ss), (0, 0, 0, 0))
+    d = ImageDraw.Draw(layer)
 
-    f_title = font(FONT_BOLD, 68)
-    f_sub = font(FONT_REGULAR, 30)
-    f_head = font(FONT_BOLD, 64)
-    f_lead = font(FONT_REGULAR, 32)
-    f_tag = font(FONT_REGULAR, 24)
-    f_note = font(FONT_REGULAR, 25)
-    f_quote = font(FONT_BOLD, 32)
-    f_foot = font(FONT_REGULAR, 22)
-    f_mono = font(FONT_MONO, 46)
-    f_small = font(FONT_REGULAR, 22)
+    def pt(x: float, y: float) -> tuple[float, float]:
+        return (x * ss, y * ss)
 
-    d = ImageDraw.Draw(cover)
-    d.text((258, 92), "BandTOTP-NEXT", font=f_title, fill=TEXT_MAIN)
-    d.text((262, 180), "手环上的 Aegis TOTP 验证器", font=f_sub, fill=(111, 216, 180))
+    def fnt(size: float, bold: bool = True) -> ImageFont.FreeTypeFont:
+        return font(FONT_BOLD if bold else FONT_REGULAR, int(round(size * ss)))
 
-    d.text((96, 300), "把验证码戴在手腕上", font=f_head, fill=TEXT_MAIN)
-    d.text((98, 396), "Aegis 备份一次导入，验证码随腕查看", font=f_lead, fill=TEXT_SOFT)
-
-    tags = [
-        ["Aegis 加密备份", "SHA1 / SHA256 / SHA512"],
-        ["1 ~ 10 位验证码", "逐条选择同步"],
-    ]
-    for row, items in enumerate(tags):
-        x = 98.0
-        y = 486.0 + row * 62.0
-        for label in items:
-            bbox = d.textbbox((0, 0), label, font=f_tag)
-            tw = bbox[2] - bbox[0]
-            pill = [x, y, x + tw + 44, y + 46]
-            d.rounded_rectangle(pill, radius=23, fill=(10, 44, 36, 255), outline=(26, 92, 74, 255), width=2)
-            d.text((x + 22, y + 22), label, font=f_tag, fill=(142, 232, 200), anchor="lm")
-            x = pill[2] + 16
-
-    d.text((98, 640), "解密全程在手机端完成 · 无网络权限 · 不上传任何数据", font=f_note, fill=TEXT_DIM)
-
-    d.rounded_rectangle([96, 782, 100, 854], radius=2, fill=(*ACCENT, 255))
-    d.text((122, 790), "无需云端", font=f_quote, fill=(111, 216, 180))
-    d.text((122, 830), "无需账号 · 数据只在你手里", font=f_note, fill=TEXT_DIM)
-
-    # 手环主视觉：屏幕按手环端真实列表页布局绘制
-    cx = 1150
-    sw, sh = 200, 510
-    s = sw / 192.0
-    screen_top = 195
-    screen_left = cx - sw / 2
-    screen_bottom = screen_top + sh
-
-    shadow = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    sd = ImageDraw.Draw(shadow)
-    sd.ellipse([cx - 150, 855, cx + 150, 902], fill=(0, 0, 0, 120))
-    shadow = shadow.filter(ImageFilter.GaussianBlur(24))
-    cover = Image.alpha_composite(cover, shadow)
-
-    d = ImageDraw.Draw(cover)
-
-    # 表带
-    for top in (70, 725):
+    def box(x0, y0, x1, y1, r, fill=None, outline=None, w=0.0) -> None:
         d.rounded_rectangle(
-            [cx - 65, top, cx + 65, top + 165],
-            radius=50,
-            fill=(10, 42, 34, 255),
-            outline=(30, 96, 78, 255),
-            width=2,
+            [x0 * ss, y0 * ss, x1 * ss, y1 * ss],
+            radius=r * ss,
+            fill=fill,
+            outline=outline,
+            width=int(round(w * ss)),
         )
 
-    # 表体
-    d.rounded_rectangle(
-        [cx - 123, 170, cx + 123, 740],
-        radius=88,
-        fill=(6, 17, 14, 255),
-        outline=(36, 116, 94, 255),
-        width=3,
-    )
-    d.rounded_rectangle(
-        [cx - 112, 182, cx + 112, 728],
-        radius=80,
-        outline=(18, 62, 50, 255),
-        width=2,
-    )
+    def text(x, y, s, size, fill, bold=True, anchor="la") -> None:
+        d.text(pt(x, y), s, font=fnt(size, bold), fill=fill, anchor=anchor)
 
-    # 屏幕内容：按 192x490 的设计稿 1:1 还原列表布局
-    scr = Image.new("RGBA", (sw, sh), (0, 0, 0, 255))
-    sd = ImageDraw.Draw(scr)
+    # 手环主视觉
+    cx = 1830.0
+    bw, bh = 424.0, 976.0
+    bx0, by0 = cx - bw / 2, 312.0
+    bx1, by1 = cx + bw / 2, by0 + bh
 
-    def X(v: float) -> float:
-        return (v - 96) * s + sw / 2
+    for band_top, band_bottom in ((58.0, 392.0), (1208.0, 1542.0)):
+        box(cx - 104, band_top, cx + 104, band_bottom, 72, fill=(9, 38, 31, 255), outline=(27, 88, 72, 255), w=3)
 
-    def Y(v: float) -> float:
-        return v * s
+    box(bx0, by0, bx1, by1, 155, fill=(7, 18, 15, 255), outline=(47, 138, 110, 255), w=4)
+    box(bx0 + 9, by0 + 9, bx1 - 9, by1 - 9, 147, outline=(19, 63, 51, 255), w=3)
 
-    f_card_name = font(FONT_BOLD, round(23 * s))
-    f_card_usr = font(FONT_REGULAR, round(16 * s))
-    f_card_remain = font(FONT_REGULAR, round(14 * s))
-    f_card_otp = font(FONT_MONO, round(31 * s))
+    sw_, sh_ = 372.0, 888.0
+    sx0, sy0 = cx - sw_ / 2, by0 + 44
+    sx1, sy1 = sx0 + sw_, sy0 + sh_
+    box(sx0, sy0, sx1, sy1, 54, fill=(0, 0, 0, 255), outline=(17, 58, 47, 255), w=2)
 
     cards = [
-        ("GitHub", "octocat", "483921", "18s"),
-        ("Google", "me@gmail.com", "704268", "24s"),
-        ("AWS", "root@prod", "915407", "9s"),
-        ("Steam", "player_one", "K7M2Q", "27s"),
+        ("GitHub", "483 921", "18s"),
+        ("Google", "704 268", "24s"),
+        ("Steam", "K7M2Q", "27s"),
     ]
-    for i, (name, usr, otp, remain) in enumerate(cards):
-        top = Y(86 + i * 120)
-        sd.rounded_rectangle(
-            [X(3), top, X(189), top + Y(112)],
-            radius=Y(24),
-            fill=(28, 28, 30, 255),
-        )
-        sd.text((X(14), top + Y(8)), name, font=f_card_name, fill=(255, 255, 255, 255))
-        sd.text((X(14), top + Y(40)), usr, font=f_card_usr, fill=(142, 142, 147, 255))
-        sd.text(
-            (X(182), top + Y(44)),
-            remain,
-            font=f_card_remain,
-            fill=(142, 142, 147, 255),
-            anchor="ra",
-        )
-        sd.text((X(14), top + Y(71)), otp, font=f_card_otp, fill=(255, 255, 255, 255))
+    f_otp = font(FONT_MONO, int(round(62 * ss)))
+    for i, (name, otp, remain) in enumerate(cards):
+        card_top = sy0 + 34 + i * 252
+        card_x = sx0 + 16
+        box(card_x, card_top, card_x + 340, card_top + 230, 44, fill=(27, 27, 29, 255))
+        text(card_x + 24, card_top + 20, name, 36, (255, 255, 255, 255))
+        text(card_x + 316, card_top + 30, remain, 26, (140, 140, 146, 255), bold=False, anchor="ra")
+        d.text(pt(card_x + 24, card_top + 76), otp, font=f_otp, fill=(255, 255, 255, 255))
 
-    # 顶部信息按钮：白色椭圆 + 深色 i
-    info_box = [X(45), Y(6), X(147), Y(78)]
-    sd.ellipse(info_box, fill=(255, 255, 255, 255))
-    icx = (info_box[0] + info_box[2]) / 2
-    sd.ellipse([icx - 4 * s, Y(15), icx + 4 * s, Y(23)], fill=(32, 32, 32, 255))
-    sd.rounded_rectangle([icx - 3 * s, Y(28), icx + 3 * s, Y(62)], radius=3 * s, fill=(32, 32, 32, 255))
+    # 列表底部渐隐（独立叠加层做真正的 alpha 混合，跟随屏幕圆角收边）
+    fade_top = sy0 + 618
+    fh = int((sy1 - fade_top) * ss)
+    fade_img = Image.new("RGBA", (int(sw_ * ss), fh), (0, 0, 0, 0))
+    fd = ImageDraw.Draw(fade_img)
+    rr = 54.0
+    for i in range(fh):
+        yf = fade_top + i / ss
+        dy = yf - (sy1 - rr)
+        inset = rr - math.sqrt(max(0.0, rr * rr - dy * dy)) if dy > 0 else 0.0
+        alpha = int(255 * (i / max(1, fh - 1)) ** 0.85)
+        fd.rectangle([inset * ss + 4, i, (sw_ - inset) * ss - 4, i + 1], fill=(0, 0, 0, alpha))
+    layer.alpha_composite(fade_img, (int(sx0 * ss), int(fade_top * ss)))
 
-    # 底部渐变遮罩
-    fade = Image.new("RGBA", (sw, sh), (0, 0, 0, 0))
-    fd = ImageDraw.Draw(fade)
-    fade_h = int(Y(86))
-    for i in range(fade_h):
-        alpha = int(255 * (i / max(1, fade_h - 1)))
-        fd.line([(0, sh - fade_h + i), (sw, sh - fade_h + i)], fill=(0, 0, 0, alpha))
-    scr = Image.alpha_composite(scr, fade)
+    # ---- 文案 ----
+    text(336, 268, "BandTOTP-NEXT", 112, (*TEXT_MAIN, 255))
+    text(340, 404, "手环上的 Aegis TOTP 验证器", 46, (111, 216, 180, 255), bold=False)
 
-    mask = Image.new("L", (sw, sh), 0)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, sw - 1, sh - 1], radius=54, fill=255)
-    cover.paste(scr, (int(screen_left), screen_top), mask)
-    d = ImageDraw.Draw(cover)
-    d.rounded_rectangle(
-        [screen_left, screen_top, screen_left + sw, screen_bottom],
-        radius=54,
-        outline=(20, 64, 52, 255),
-        width=2,
-    )
+    text(150, 636, "把验证码", 150, (*TEXT_MAIN, 255))
+    text(150, 808, "戴在手腕上", 150, (*TEXT_MAIN, 255))
+
+    text(154, 1002, "Aegis 备份一次导入，验证码抬手即看", 50, (*TEXT_SOFT, 255), bold=False)
+
+    pills = ["小米手环 9", "Aegis 加密备份", "1 ~ 10 位验证码", "无网络权限"]
+    max_pill_w = 1180.0
+    size = 38.0
+    while True:
+        f_pill = fnt(size, bold=False)
+        total = sum(d.textlength(p, font=f_pill) / ss + 64 for p in pills) + 24 * (len(pills) - 1)
+        if total <= max_pill_w or size <= 30:
+            break
+        size -= 2
+
+    px_x = 150.0
+    pill_y, pill_h = 1092.0, 84.0
+    for label_txt in pills:
+        tw = d.textlength(label_txt, font=f_pill) / ss
+        pw = tw + 64
+        box(px_x, pill_y, px_x + pw, pill_y + pill_h, pill_h / 2, fill=(10, 44, 36, 236), outline=(28, 96, 78, 255), w=2)
+        d.text(pt(px_x + 32, pill_y + pill_h / 2), label_txt, font=f_pill, fill=(142, 232, 200, 255), anchor="lm")
+        px_x += pw + 24
 
     # 页脚
-    d.line([96, 906, width - 96, 906], fill=(20, 60, 49, 255), width=2)
-    d.text((96, 932), "github.com/ymh0000123/BandTOTP-NEXT", font=f_foot, fill=TEXT_DIM, anchor="lt")
-    d.text(
-        (width - 96, 932),
-        "MIT License · based on leset0ng/BandTOTP-Band",
-        font=f_foot,
-        fill=(79, 122, 108),
-        anchor="rt",
-    )
+    d.line([pt(150, 1372), pt(1370, 1372)], fill=(26, 70, 57, 255), width=max(1, int(2 * ss)))
+    foot_l = "github.com/ymh0000123/BandTOTP-NEXT"
+    foot_r = "MIT License · based on leset0ng/BandTOTP-Band"
+    fs = 34.0
+    while fs > 22:
+        f_foot = fnt(fs, bold=False)
+        if d.textlength(foot_l, font=f_foot) / ss + d.textlength(foot_r, font=f_foot) / ss + 48 <= 1220:
+            break
+        fs -= 2
+    text(150, 1394, foot_l, fs, (*TEXT_DIM, 255), bold=False)
+    text(1370, 1394, foot_r, fs, (79, 122, 108, 255), bold=False, anchor="ra")
+
+    cover = Image.alpha_composite(cover, layer.resize((width, height), Image.LANCZOS))
+
+    icon = render_icon(156, supersample=6)
+    cover.alpha_composite(icon, (150, 262))
 
     return cover
 
@@ -363,9 +325,9 @@ def main() -> None:
     icon.save(ROOT / "src" / "common" / "logo.png", optimize=True)
     print(f"icon: {icon.size} -> src/common/logo.png")
 
-    cover = render_cover(1500, 1000)
-    cover.convert("RGB").save(DOCS / "cover.png", optimize=True)
-    print(f"cover: {cover.size} -> docs/cover.png")
+    cover = render_cover(2400, 1600)
+    cover.convert("RGB").save(DOCS / "cover.webp", quality=88, method=6)
+    print(f"cover: {cover.size} -> docs/cover.webp")
 
 
 if __name__ == "__main__":

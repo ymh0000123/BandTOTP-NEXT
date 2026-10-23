@@ -4,6 +4,10 @@ node_modules/
 # 构建产物
 build/
 dist/
+build-demo/
+dist-demo/
+__pycache__/
+*.pyc
 *.apk
 *.rpk
 .temp_*/

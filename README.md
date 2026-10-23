@@ -1,6 +1,6 @@
 # BandTOTP-NEXT
 
-![BandTOTP-NEXT 封面](docs/cover.png)
+![BandTOTP-NEXT 封面](docs/cover.webp)
 
 小米手环 9（Vela 快应用）的 TOTP 验证器改进版，支持 **Aegis 备份导入**、**多算法**、**多位验证码** 与 **自定义周期**。
 
@@ -57,7 +57,7 @@ BandTOTP-NEXT/
 ├── sign/                      # 本地签名材料目录（certificate.pem / private.pem，不入库）
 ├── dist/                      # 构建生成的签名 RPK（不入库）
 ├── docs/
-│   └── cover.png              # README 介绍封面（3:2）
+│   └── cover.webp             # README 介绍封面（3:2）
 ├── package.json               # crypto-js 依赖
 ├── .github/workflows/
 │   └── release.yml            # 发布 Release 时自动构建 RPK 与 APK
@@ -98,6 +98,28 @@ BandTOTP-NEXT/
 
 > 若打包工具没有自动收集 `node_modules`，请确认 AIoT-IDE 的依赖安装已完成。
 > 手环端依赖 `crypto-js` 的 HmacSHA1/HmacSHA256/HmacSHA512/HmacMD5 与 MD5。
+
+#### 模拟器演示令牌
+
+先停止 IDE 中正在运行的调试，在项目根目录终端执行：
+
+```bash
+npm run demo
+```
+
+按终端提示选择已创建的模拟器。演示启动参数为 `pages/index?demo=1`，
+会加载 5 条公开测试密钥生成的虚假验证器：6 位 TOTP、8 位 SHA256、
+10 位 SHA512 / 60 秒、Steam、HOTP。列表显示黄色“演示 · 非真实账号”标识，
+可测试倒计时、详情、下一码和双击删除；重新启动演示会恢复全部条目。
+
+- 演示模式不读取或写入真实 storage，也不连接手机互联接口、不接收导入消息。
+- `npm run demo:build` 仅构建演示包，不启动模拟器。
+- 演示产物独立输出到 `build-demo/` 和 `dist-demo/`，**不要安装到实机**。
+- 演示启动已兼容仅配置 `image.sysdir.1` 的新版 IDE 模拟器，避免旧工具链误报
+  `this emulator is unavailable`；无需修改 SDK 配置或重新创建模拟器。
+- 退出演示终端命令后，普通 IDE 调试和 `aiot build` / `aiot release` 不会自动启用演示。
+  请使用 `dist/` 中的正常构建包进行实机测试和发布。
+- 此模式通过显式参数开启，不依赖“接口失败”或开发包来猜测模拟器环境。
 
 ### 同步 App（Android Studio）
 

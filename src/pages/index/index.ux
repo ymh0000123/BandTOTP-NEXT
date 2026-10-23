@@ -28,6 +28,7 @@
       <img src="/common/bblack.png" class="bottom-mask" if="{{list.length != 0}}" />
 
       <img src="/common/info.png" class="info-btn" onclick="i()" />
+      <text class="demo-badge" if="{{demoMode}}">演示 · 非真实账号</text>
     </div>
 
     <!-- ==================== 详情 ==================== -->
@@ -59,6 +60,7 @@
         <img src="/common/logo.png" class="about-logo" />
         <text class="about-title">BandTOTP-NEXT</text>
         <text class="about-version">版本 2.0.0</text>
+        <text class="about-version" if="{{demoMode}}">模拟器演示 · 不保存数据</text>
 
         <text class="about-credit">原作者：leset0ng</text>
         <text class="about-credit">本版本作者：ymh0000123</text>
@@ -84,7 +86,10 @@ import prompt from '@system.prompt';
 import interconnect from '@system.interconnect';
 import storage from '@system.storage';
 
-const conn = interconnect.instance();
+const demoEntries = require('./demo-entries');
+
+// 互联接口可能在模拟器中不可用，不要在模块加载时创建实例。
+let conn = null;
 const dataKey = 'keys';
 const STORAGE_VERSION = 2;
 
@@ -168,7 +173,12 @@ class OtpEntry {
 }
 
 export default {
+  // 只有显式启动参数 demo=1 才启用，不能通过互联失败判断模拟器。
+  public: {
+    demo: ''
+  },
   private: {
+    demoMode: false,
     ab: false,
     list: [],
     more_show: false,
@@ -181,11 +191,15 @@ export default {
   onInit() {
     storageReady = false;
     pendingMessages = [];
+    this.demoMode = this.demo === '1';
+    if (this.demoMode) {
+      this.list = demoEntries.map((raw) => new OtpEntry(raw));
+      this.onStorageReady();
+      return;
+    }
     this.loadFromStorage();
 
-    conn.onmessage = (data) => {
-      this.onMessage(data);
-    };
+    this.initInterconnect();
   },
 
   onShow() {
@@ -202,9 +216,42 @@ export default {
     clearTimeout(delTimer);
   },
 
+  /* ---------------- 设备接口 ---------------- */
+
+  initInterconnect() {
+    if (this.demoMode) return;
+    conn = null;
+    try {
+      if (!interconnect || typeof interconnect.instance !== 'function') {
+        console.warn('[BandTOTP-NEXT] interconnect.instance unavailable');
+        return;
+      }
+      conn = interconnect.instance();
+      if (!conn) {
+        console.warn('[BandTOTP-NEXT] interconnect instance unavailable');
+        return;
+      }
+      conn.onmessage = (data) => this.onMessage(data);
+    } catch (e) {
+      conn = null;
+      console.warn('[BandTOTP-NEXT] interconnect init failed: ' + e.message);
+    }
+  },
+
   /* ---------------- 存储 ---------------- */
 
   loadFromStorage() {
+    if (this.demoMode) return;
+    try {
+      this.readStorage();
+    } catch (e) {
+      console.warn('[BandTOTP-NEXT] storage.get failed: ' + e.message);
+      this.onStorageReady();
+    }
+  },
+
+  readStorage() {
+    if (this.demoMode) return;
     storage.get({
       key: dataKey,
       success: (data) => {
@@ -257,6 +304,7 @@ export default {
   },
 
   save() {
+    if (this.demoMode) return;
     const data = {
       version: STORAGE_VERSION,
       list: this.list.map((e) => e.serialize())
@@ -270,6 +318,7 @@ export default {
   /* ---------------- 导入 ---------------- */
 
   onMessage(message) {
+    if (this.demoMode) return;
     if (!storageReady) {
       pendingMessages.push(message);
       return;
@@ -629,6 +678,17 @@ export default {
   font-weight: bold;
   color: #FFFFFF;
   text-align: left;
+}
+
+.demo-badge {
+  position: absolute;
+  left: 8px;
+  top: 62px;
+  width: 176px;
+  height: 18px;
+  font-size: 12px;
+  color: #FFCC00;
+  text-align: center;
 }
 
 .info-btn {

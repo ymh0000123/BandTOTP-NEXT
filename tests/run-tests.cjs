@@ -884,6 +884,9 @@ async function run() {
     assertIncludes(error.message, '解密失败');
   });
 
+  require('./startup-tests.cjs')({ test, assert, assertEqual, TOTP, IMP });
+  require('./emulator-compat-tests.cjs')({ test, assert, assertEqual });
+
   console.log('\n' + (failed === 0 ? '全部通过' : '存在失败') + ': ' + passed + ' 通过, ' + failed + ' 失败\n');
 
   if (failed > 0) {
